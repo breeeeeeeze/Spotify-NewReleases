@@ -1,13 +1,7 @@
-
-
-import pprint
-import sys
-
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import SimpleLogger as logger
-import time
-import traceback
+import time,traceback,sys
 from PlaylistGenerator import ArtistRecentTracks, LabelRecentTracks
 import configparser as cfg
 
@@ -26,10 +20,10 @@ with open(config['General']['LABELS_FILE'],'r') as f:
 try:
 	sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=config['Spotify']['CLIENT_ID'], client_secret=config['Spotify']['CLIENT_SECRET'], redirect_uri=config['Spotify']['REDIRECT_URI'], scope=config['Spotify']['SCOPE'], username='bxtmusic'))
 
-	labels = LabelRecentTracks(sp, labelList, playlistURI=playlistURILabels, country=country, days=days)
+	labels = LabelRecentTracks(sp, labelList, playlistURI=playlistURILabels, country=country, days=days, config = config['General'])
 	labels.run()
 
-	artists = ArtistRecentTracks(sp, playlistURI=playlistURIArtist, albumTypes=albumTypes, country=country, days=days)
+	artists = ArtistRecentTracks(sp, playlistURI=playlistURIArtist, albumTypes=albumTypes, country=country, days=days, config = config['General'])
 	artists.run()
 
 except Exception:

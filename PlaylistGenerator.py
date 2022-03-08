@@ -1,10 +1,11 @@
 from datetime import date
 import SimpleLogger as logger
 import Utils
+import sys, pprint
 from tqdm import tqdm
 
 class PlaylistGenerator:
-	def __init__(self, Spotify, playlistURI=None, country='DE', days=7):
+	def __init__(self, Spotify, playlistURI=None, country='DE', days=7, config = None):
 		self.Spotify = Spotify
 		self.playlistURI = playlistURI
 		self.playlistTracks = []
@@ -12,6 +13,23 @@ class PlaylistGenerator:
 		self.currentDate = date.today()
 		self.country = country
 		self.daysSinceRelease = days
+		self.artistList = []
+		self.listOfAddedTracks = []
+		self.userLikedTracksIds = []
+		self.config = config
+
+
+	def getUserLikedTracks(self):
+		logger.log('Getting list of liked tracks', 'info')
+		count = 50
+		results = self.Spotify.current_user_saved_tracks(limit = 50)
+		self.userLikedTracksIds.extend(results['items'])
+		#pprint.pprint(self.userLikedTracksIds[:3])
+		#sys.exit()
+		while results['next']:
+			results = self.Spotify.next(results)
+			self.userLikedTracksIds.extend(results['items'])
+		self.userLikedTracksIds = [track['track']['id'] for track in self.userLikedTracksIds]
 
 	def resetPlaylist(self):
 		self.Spotify.playlist_replace_items(self.playlistURI, ['spotify:track:4RWkW7tGWseUu1T9LzpEBP'])
@@ -29,10 +47,50 @@ class PlaylistGenerator:
 				return True
 		return False
 
+	def getArtistList(self):
+		logger.log('Getting list of followed artists','info')
+		results = self.Spotify.current_user_followed_artists()
+		self.artistList.extend(results['artists']['items'])
+		while results['artists']['next']:
+			results = self.Spotify.next(results['artists'])
+			self.artistList.extend(results['artists']['items'])
+
+	def isDuplicate(self, track):
+		if not self.config['IGNORE_DUPLICATES']: return False
+		artists = ','.join(el['name'] for el in track['artists'])
+		name = track['name']
+		trackDict  = {artists: name}
+		if trackDict in self.listOfAddedTracks:
+			return True
+		self.listOfAddedTracks.append(trackDict)
+		return False
+
+	def isLiked(self, track):
+		if not self.config['IGNORE_ALREADY_LIKED']: return False
+		if track['id'] in self.userLikedTracksIds:
+			return True
+		return False
+
+	def artistIsFollowed(self, track):
+		if not self.config['IGNORE_LABEL_IF_ARTIST_FOLLOWED']: return False
+		artistFollowedIds = [artist['id'] for artist in self.artistList]
+		for artist in track['artists']:
+			if artist['id'] in artistFollowedIds:
+				return True
+		return False
+
 	def checkTrack(self, track, artist=None):
 		for a in track['artists']:
 			if (not artist or artist['name'] == a['name']) and not Utils.isExtended(track['name']):
-				return True
+				if (not self.isDuplicate(track) and not self.isLiked(track)):
+					return True
+		return False
+
+	def checkTrack2(self, track, artist=None):
+		for a in track['artists']:
+			if (not artist or artist['name'] == a['name']) and not Utils.isExtended(track['name']):
+				if (not self.isDuplicate(track) and not self.isLiked(track) and not self.artistIsFollowed(track)):
+					return True
 		return False
 
 	def addToPlaylistCache(self, track):
@@ -54,18 +112,9 @@ class PlaylistGenerator:
 			self.Spotify.playlist_add_items(self.playlistURI, el)
 							
 class ArtistRecentTracks(PlaylistGenerator):
-	def __init__(self, Spotify, playlistURI=None, albumTypes='album,single', country='DE', days=7):
-		super().__init__(Spotify, playlistURI=playlistURI, country=country, days=days)
-		self.artistList = []
+	def __init__(self, Spotify, playlistURI=None, albumTypes='album,single', country='DE', days=7, config=None):
+		super().__init__(Spotify, playlistURI=playlistURI, country=country, days=days, config=config)
 		self.albumTypes = albumTypes
-
-	def getArtistList(self):
-		logger.log('Getting list of followed artists','info')
-		results = self.Spotify.current_user_followed_artists()
-		self.artistList.extend(results['artists']['items'])
-		while results['artists']['next']:
-			results = self.Spotify.next(results['artists'])
-			self.artistList.extend(results['artists']['items'])
 
 	def getArtistAlbums(self, artistID):
 		artistAlbumList = []
@@ -78,7 +127,8 @@ class ArtistRecentTracks(PlaylistGenerator):
 
 	def run(self):
 		self.getArtistList()
-		logger.log('Finding recently released track','info')
+		self.getUserLikedTracks()
+		logger.log('Finding recently released tracks','info')
 		lelel = tqdm(self.artistList, leave=True)
 		for artist in lelel:
 			lelel.set_postfix_str(artist['name'], refresh='True')
@@ -92,8 +142,8 @@ class ArtistRecentTracks(PlaylistGenerator):
 		self.writePlaylist()
 
 class LabelRecentTracks(PlaylistGenerator):
-	def __init__(self, Spotify, labels, playlistURI=None, country='DE', days=7):
-		super().__init__(Spotify, playlistURI=playlistURI, country=country, days=days)
+	def __init__(self, Spotify, labels, playlistURI=None, country='DE', days=7, config=None):
+		super().__init__(Spotify, playlistURI=playlistURI, country=country, days=days, config=config)
 		if isinstance(labels, str):
 			labels = list(labels)
 		self.labelList = labels
@@ -110,6 +160,8 @@ class LabelRecentTracks(PlaylistGenerator):
 			
 
 	def run(self):
+		self.getArtistList()
+		self.getUserLikedTracks()
 		logger.log('Collecting releases','info')
 		tqdm_label = tqdm(self.labelList, leave=True)
 		for label in tqdm_label:
@@ -119,6 +171,6 @@ class LabelRecentTracks(PlaylistGenerator):
 				if self.checkAlbum(album, label=label):
 					tracks = self.Spotify.album_tracks(album['id'])
 					for track in tracks['items']:
-						if self.checkTrack(track):
+						if self.checkTrack2(track):
 							self.addToPlaylistCache(track)
 		self.writePlaylist()
