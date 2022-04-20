@@ -116,3 +116,5 @@ dmypy.json
 config.ini
 .cache*
 labels.txt
+.pylintrc
+.vscode/
