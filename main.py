@@ -26,7 +26,7 @@ def main():
 											client_secret=config['Spotify']['CLIENT_SECRET'],
 											redirect_uri=config['Spotify']['REDIRECT_URI'],
 											scope=config['Spotify']['SCOPE'],
-											username='bxtmusic'))
+											username=config['Spotify']['USERNAME']))
 
 		labels = LabelRecentTracks(
 									spotifyClient,
