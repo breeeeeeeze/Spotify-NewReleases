@@ -118,3 +118,4 @@ config.ini
 labels.txt
 .pylintrc
 .vscode/
+.flake8
